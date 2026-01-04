@@ -29,7 +29,7 @@ typedef struct display_t {
 
 typedef struct chip8_t {
     memory_t    mem;
-    cpu_t regs;
+    cpu_t       cpu;
     stack_t     stack;
     display_t   display;
     keyboard_t  keyboard;
