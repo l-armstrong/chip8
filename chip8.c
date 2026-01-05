@@ -28,9 +28,10 @@ typedef struct keyboard_t {
 } keyboard_t;
 
 typedef struct display_t {
-    uint8_t buf[64*32];
-    uint8_t width;
-    uint8_t height;
+    uint8_t  buf[64*32];
+    uint8_t  width;
+    uint8_t  height;
+    uint16_t scale;
 } display_t;
 
 typedef enum {
@@ -73,8 +74,8 @@ void launch_window(chip8_t *chip8) {
         "CHIP8",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        chip8->display.width * 10,
-        chip8->display.height * 10,
+        chip8->display.width * chip8->display.scale,
+        chip8->display.height * chip8->display.scale,
         0
     );
 
@@ -111,6 +112,27 @@ void clear_window(void) {
     SDL_RenderPresent(renderer);
 }
 
+void update_window(chip8_t *chip8) {
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    for (int y = 0; y < chip8->display.height; y++) {
+        for (int x = 0; x < chip8->display.width; x++) {
+            if (chip8->display.buf[y * chip8->display.width + x]) {
+                SDL_Rect r = {
+                    x * chip8->display.scale,
+                    y * chip8->display.scale,
+                    chip8->display.scale,
+                    chip8->display.scale
+                };
+                SDL_RenderFillRect(renderer, &r);
+            }
+        }
+    }
+
+    SDL_RenderPresent(renderer);
+}
+
 void handle_input(chip8_t *chip8) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
@@ -134,6 +156,7 @@ void chip8_init(chip8_t *c) {
     c->instrs = NULL;
     c->cpu.PC = 0x200;
     c->power = ON;
+    c->display.scale = 10;
     c->display.width = 64;
     c->display.height = 32;
 }
@@ -156,6 +179,7 @@ static void sys_ignored(chip8_t *chip8, uint16_t op) {
 #define Y(op)      (((op) >> 4) & 0xF)
 #define KK(op)     ((op) & 0xFF)
 #define NNN(op)    ((op) & 0x0FFF)
+#define N(op)      ((op) & 0xF)
 
 /* 00e0 CLS */
 static void cls(chip8_t *chip8, uint16_t op) {
@@ -193,6 +217,32 @@ static void ld_i_nnn(chip8_t *chip8, uint16_t op) {
 /* Dxyn */
 static void drw_vx_vy_n(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE Dxyn\n");
+    VF(&chip8->cpu) = 0;
+
+    const uint8_t x0 = VX(&chip8->cpu, X(op));
+    const uint8_t y0 = VX(&chip8->cpu, Y(op));
+    const uint8_t n =  N(op);
+
+    for (uint8_t row = 0; row < n; row++) {
+        uint16_t addr = chip8->cpu.I + row;
+        uint8_t sprite_byte = chip8->mem.map[addr];
+
+        for (uint8_t bit = 0; bit < 8; bit++) {
+            uint8_t sprite_pixel = (sprite_byte >> (7 - bit)) & 0x1;
+            if (sprite_pixel == 0) continue;
+
+            uint8_t x = (uint8_t)((x0 + bit) % chip8->display.width);
+            uint8_t y = (uint8_t)((y0 + row) % chip8->display.height);
+
+            uint16_t idx = (uint16_t)(y * chip8->display.width + x);
+
+            if (chip8->display.buf[idx] == 1) {
+                VF(&chip8->cpu) = 1;
+            }
+
+            chip8->display.buf[idx] ^= 1;
+        }
+    }
     chip8->cpu.PC += 2;
 }
 
@@ -265,6 +315,7 @@ int main(int argc, char **argv) {
     while(chip8.power == ON) {
         handle_input(&chip8);
         chip8_exec(&chip8);
+        update_window(&chip8);
     }
 
     destroy_window();
