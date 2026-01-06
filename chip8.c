@@ -153,12 +153,12 @@ void *xmalloc(size_t size) {
 
 /*=========================================== Chip8 Instructions ==================================================== */
 /* GET Opcode Helpers */
-#define OP_X(op)      (((op) >> 8) & 0xF)
-#define OP_Y(op)      (((op) >> 4) & 0xF)
-#define OP_KK(op)     ((op) & 0xFF)
-#define OP_NNN(op)    ((op) & 0x0FFF)
-#define OP_N(op)      ((op) & 0xF)
-#define OP_LO(op)     ((op) & 0xFF)
+#define X(op)         (((op) >> 8) & 0xF)
+#define Y(op)         (((op) >> 4) & 0xF)
+#define KK(op)        ((op) & 0xFF)
+#define NNN(op)       ((op) & 0x0FFF)
+#define N(op)         ((op) & 0xF)
+#define LO(op)        ((op) & 0xFF)
 
 /* State access helpers */
 #define V(c, i)       ((c)->cpu.V[(i) & 0xF])
@@ -204,26 +204,26 @@ static void cls(chip8_t *chip8, uint16_t op) {
 /* 6xkk (load) */
 static void ld_vx_kk(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE 6xkk\n");
-    VX(&chip8->cpu, OP_X(op)) = OP_KK(op);
+    VX(&chip8->cpu, X(op)) = KK(op);
     chip8->cpu.PC += 2;
 }
 
 /* 7xkk (add) */
 static void add_vx_kk(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE 7xkk\n");
-    VX(&chip8->cpu, OP_X(op)) = (VX(&chip8->cpu, OP_X(op)) + OP_KK(op)) & 255;
+    VX(&chip8->cpu, X(op)) = (VX(&chip8->cpu, X(op)) + KK(op)) & 255;
     chip8->cpu.PC += 2;
 }
 /* 1NNN (jump) */
 static void jp_nnn(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE 1nnn\n");
-    chip8->cpu.PC = OP_NNN(op);
+    chip8->cpu.PC = NNN(op);
 }
 
 /* Annn */
 static void ld_i_nnn(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE Annn\n");
-    chip8->cpu.I = OP_NNN(op);
+    chip8->cpu.I = NNN(op);
     chip8->cpu.PC += 2;
 }
 
@@ -232,9 +232,9 @@ static void drw_vx_vy_n(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE Dxyn\n");
     VF(&chip8->cpu) = 0;
 
-    const uint8_t x0 = VX(&chip8->cpu, OP_X(op));
-    const uint8_t y0 = VX(&chip8->cpu, OP_Y(op));
-    const uint8_t n =  OP_N(op);
+    const uint8_t x0 = VX(&chip8->cpu, X(op));
+    const uint8_t y0 = VX(&chip8->cpu, Y(op));
+    const uint8_t n =  N(op);
 
     for (uint8_t row = 0; row < n; row++) {
         uint16_t addr = chip8->cpu.I + row;
