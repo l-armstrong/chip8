@@ -4,27 +4,24 @@
 #include <string.h>
 #include <SDL2/SDL.h>
 
+/*=========================================== Data Structures ==================================================== */
 typedef struct memory_t {
     uint8_t map[4096];
 } memory_t;
 
 typedef struct stack16_t {
-    uint16_t data[16]; // used to store the address that the interpreter should return to
+    uint16_t data[16];       // used to store the address that the interpreter should return to
     uint8_t  sp;
 } stack16_t;
 
 typedef struct cpu_t {
-    uint8_t  V[16]; // 0xVF // used as a flag by some instructions
-    uint16_t I;  // used to store memory addresses
+    uint8_t  V[16];          // 0xVF // used as a flag by some instructions
+    uint16_t I;              // used to store memory addresses
     uint16_t PC;
 } cpu_t;
-
-/* Register access helpers */
-#define VX(cpu, x) ((cpu)->V[(x) & 0xF])
-#define VF(cpu)    ((cpu)->V[0xF])
  
 typedef struct keyboard_t {
-    uint8_t keys[16]; // 0x0-0xF
+    uint8_t keys[16];        // 0x0 => 0xF
 } keyboard_t;
 
 typedef struct display_t {
@@ -32,6 +29,8 @@ typedef struct display_t {
     uint8_t  width;
     uint8_t  height;
     uint16_t scale;
+    SDL_Window   *window;
+    SDL_Renderer *renderer;
 } display_t;
 
 typedef enum {
@@ -61,16 +60,15 @@ typedef struct chip8_t {
     chip8_instructions_t *instrs;
 } chip8_t;
 
-SDL_Window   *window;
-SDL_Renderer *renderer;
 
+/*============================================  Window  ==================================================== */
 void launch_window(chip8_t *chip8) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "SDL_Init error: %s\n", SDL_GetError());
         exit(1);
     }
 
-    window = SDL_CreateWindow(
+    chip8->display.window = SDL_CreateWindow(
         "CHIP8",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
@@ -79,43 +77,43 @@ void launch_window(chip8_t *chip8) {
         0
     );
 
-    if (window == NULL) {
+    if (chip8->display.window == NULL) {
         fprintf(stderr, "SDL_CreateWindow error: %s\n", SDL_GetError());
         SDL_Quit();
         exit(1);
     }
 
-    renderer = SDL_CreateRenderer(
-        window,
+    chip8->display.renderer = SDL_CreateRenderer(
+        chip8->display.window,
         -1, 
         SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
     );
 
-    if (renderer == NULL) {
+    if (chip8->display.renderer == NULL) {
         fprintf(stderr, "SDL_CreateRenderer error: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
+        SDL_DestroyWindow(chip8->display.window);
         SDL_Quit();
         exit(1);
     }
 
 }
 
-void destroy_window(void) {
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
+void destroy_window(chip8_t *chip8) {
+    SDL_DestroyRenderer(chip8->display.renderer);
+    SDL_DestroyWindow(chip8->display.window);
     SDL_Quit();
 }
 
-void clear_window(void) {
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-    SDL_RenderPresent(renderer);
+void clear_window(chip8_t *chip8) {
+    SDL_SetRenderDrawColor(chip8->display.renderer, 0, 0, 0, 255);
+    SDL_RenderClear(chip8->display.renderer);
+    SDL_RenderPresent(chip8->display.renderer);
 }
 
 void update_window(chip8_t *chip8) {
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_SetRenderDrawColor(chip8->display.renderer, 0, 0, 0, 255);
+    SDL_RenderClear(chip8->display.renderer);
+    SDL_SetRenderDrawColor(chip8->display.renderer, 255, 255, 255, 255);
     for (int y = 0; y < chip8->display.height; y++) {
         for (int x = 0; x < chip8->display.width; x++) {
             if (chip8->display.buf[y * chip8->display.width + x]) {
@@ -125,14 +123,15 @@ void update_window(chip8_t *chip8) {
                     chip8->display.scale,
                     chip8->display.scale
                 };
-                SDL_RenderFillRect(renderer, &r);
+                SDL_RenderFillRect(chip8->display.renderer, &r);
             }
         }
     }
 
-    SDL_RenderPresent(renderer);
+    SDL_RenderPresent(chip8->display.renderer);
 }
 
+/*============================================  User Input  ==================================================== */
 void handle_input(chip8_t *chip8) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
@@ -142,6 +141,7 @@ void handle_input(chip8_t *chip8) {
     }
 }
 
+/*============================================ Utility Methods  ==================================================== */
 void *xmalloc(size_t size) {
     void *ptr = malloc(size);
     if (ptr == NULL) {
@@ -151,19 +151,22 @@ void *xmalloc(size_t size) {
     return ptr;
 }
 
-void chip8_init(chip8_t *c) {
-    memset(c, 0, sizeof(*c));
-    c->instrs = NULL;
-    c->cpu.PC = 0x200;
-    c->power = ON;
-    c->display.scale = 10;
-    c->display.width = 64;
-    c->display.height = 32;
-}
+/*=========================================== Chip8 Instructions ==================================================== */
+/* GET Opcode Helpers */
+#define OP_X(op)      (((op) >> 8) & 0xF)
+#define OP_Y(op)      (((op) >> 4) & 0xF)
+#define OP_KK(op)     ((op) & 0xFF)
+#define OP_NNN(op)    ((op) & 0x0FFF)
+#define OP_N(op)      ((op) & 0xF)
+#define OP_LO(op)     ((op) & 0xFF)
 
-void chip8_load_program(chip8_t *chip8, uint8_t *chip8_program, size_t file_size) {
-    memcpy(&chip8->mem.map[0x200], chip8_program, file_size);
-}
+/* State access helpers */
+#define V(c, i)    ((c)->cpu.V[(i) & 0xF])
+#define IREG(c)    ((c)->cpu.I)
+#define PC(c)      ((c)->cpu.PC)
+/* Register access helpers */
+#define VX(cpu, x) ((cpu)->V[(x) & 0xF])
+#define VF(cpu)    ((cpu)->V[0xF])
 
 static void op_unknown(chip8_t *chip8, uint16_t op) {
     printf("unknown opcode: %04X\n", op);
@@ -173,13 +176,6 @@ static void op_unknown(chip8_t *chip8, uint16_t op) {
 static void sys_ignored(chip8_t *chip8, uint16_t op) {
     chip8->cpu.PC += 2;
 }
-
-/* GET Opcode Helpers */
-#define X(op)      (((op) >> 8) & 0xF)
-#define Y(op)      (((op) >> 4) & 0xF)
-#define KK(op)     ((op) & 0xFF)
-#define NNN(op)    ((op) & 0x0FFF)
-#define N(op)      ((op) & 0xF)
 
 /* 00e0 CLS */
 static void cls(chip8_t *chip8, uint16_t op) {
@@ -191,26 +187,26 @@ static void cls(chip8_t *chip8, uint16_t op) {
 /* 6xkk (load) */
 static void ld_vx_kk(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE 6xkk\n");
-    VX(&chip8->cpu, X(op)) = KK(op);
+    VX(&chip8->cpu, OP_X(op)) = OP_KK(op);
     chip8->cpu.PC += 2;
 }
 
 /* 7xkk (add) */
 static void add_vx_kk(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE 7xkk\n");
-    VX(&chip8->cpu, X(op)) = (VX(&chip8->cpu, X(op)) + KK(op)) & 255;
+    VX(&chip8->cpu, OP_X(op)) = (VX(&chip8->cpu, OP_X(op)) + OP_KK(op)) & 255;
     chip8->cpu.PC += 2;
 }
 /* 1NNN (jump) */
 static void jp_nnn(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE 1nnn\n");
-    chip8->cpu.PC = NNN(op);
+    chip8->cpu.PC = OP_NNN(op);
 }
 
 /* Annn */
 static void ld_i_nnn(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE Annn\n");
-    chip8->cpu.I = NNN(op);
+    chip8->cpu.I = OP_NNN(op);
     chip8->cpu.PC += 2;
 }
 
@@ -219,12 +215,13 @@ static void drw_vx_vy_n(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE Dxyn\n");
     VF(&chip8->cpu) = 0;
 
-    const uint8_t x0 = VX(&chip8->cpu, X(op));
-    const uint8_t y0 = VX(&chip8->cpu, Y(op));
-    const uint8_t n =  N(op);
+    const uint8_t x0 = VX(&chip8->cpu, OP_X(op));
+    const uint8_t y0 = VX(&chip8->cpu, OP_Y(op));
+    const uint8_t n =  OP_N(op);
 
     for (uint8_t row = 0; row < n; row++) {
         uint16_t addr = chip8->cpu.I + row;
+        if (addr >= 4096) break;
         uint8_t sprite_byte = chip8->mem.map[addr];
 
         for (uint8_t bit = 0; bit < 8; bit++) {
@@ -251,6 +248,25 @@ static void route_0(chip8_t *chip8, uint16_t op) {
     chip8->instrs->op0[op & 0xFF](chip8, op);
 }
 
+/*=========================================== Chip8 Init ==================================================== */
+void chip8_init(chip8_t *c) {
+    memset(c, 0, sizeof(*c));
+    c->instrs = NULL;
+    c->cpu.PC = 0x200;
+    c->power = ON;
+    c->display.scale = 10;
+    c->display.width = 64;
+    c->display.height = 32;
+}
+
+void chip8_load_program(chip8_t *chip8, uint8_t *chip8_program, size_t file_size) {
+    if (file_size > (sizeof(chip8->mem.map) - 0x200)) {
+        fprintf(stderr, "chip8 ROM too large: %zu bytes\n", file_size);
+        exit(1); 
+    }
+    memcpy(&chip8->mem.map[0x200], chip8_program, file_size);
+}
+
 void chip8_load_instructions(chip8_instructions_t *chip8_instructions) {
     for (int i = 0; i < 16;  i++) chip8_instructions->primary[i] = op_unknown; 
     for (int i = 0; i < 256; i++) chip8_instructions->op0[i] = sys_ignored;
@@ -269,10 +285,15 @@ void chip8_load_instructions(chip8_instructions_t *chip8_instructions) {
 }
 
 void chip8_exec(chip8_t *chip8) {
+    if (chip8->cpu.PC > 4094) {
+        chip8->power = OFF;
+        return;
+    }
     uint16_t opcode = (chip8->mem.map[chip8->cpu.PC] << 8) | chip8->mem.map[chip8->cpu.PC+1];
     chip8->instrs->primary[(opcode >> 12) & 0xF](chip8, opcode);
 }
 
+/*================================================ Main ==================================================== */
 int main(int argc, char **argv) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <program.ch8>\n", argv[0]);
@@ -310,7 +331,7 @@ int main(int argc, char **argv) {
     chip8.instrs = &chip8_instructions;
 
     launch_window(&chip8);
-    clear_window();
+    clear_window(&chip8);
 
     while(chip8.power == ON) {
         handle_input(&chip8);
@@ -318,7 +339,7 @@ int main(int argc, char **argv) {
         update_window(&chip8);
     }
 
-    destroy_window();
+    destroy_window(&chip8);
     free(chip8_program);
     return 0;
 }
