@@ -198,7 +198,7 @@ static void op_unknown(chip8_t *chip8, uint16_t op) {
  * jump to a machine routine at nnn
  * note: this instruction is ignored by modern interpreters */
 static void sys_ignored(chip8_t *chip8, uint16_t op) {
-    chip8->cpu.PC += 2;
+    NEXT(chip8);
 }
 
 /* 00e0 - CLS 
@@ -206,7 +206,7 @@ static void sys_ignored(chip8_t *chip8, uint16_t op) {
 static void cls(chip8_t *chip8, uint16_t op) {
     printf("CLS: clear screen\n");
     memset(chip8->display.buf, 0, sizeof(chip8->display.buf));
-    chip8->cpu.PC += 2;
+    NEXT(chip8);
 }
 
 /* 00ee - RET
@@ -295,11 +295,50 @@ static void xor_vx_vy(chip8_t *chip8, uint16_t op) {
 }
 
 /* 8xy4 - ADD Vx, Xy 
- * Vx = Vx + Vy, set VF = carry */
+ * set Vx = Vx + Vy, set VF = carry */
 static void add_vx_vy(chip8_t *chip8, uint16_t op) {
-    Vx(chip8, op) = Vx(chip8, op) + Vy(chip8, op);
+    Vx(chip8, op) = (Vx(chip8, op) + Vy(chip8, op)) & 255;
     VF_(chip8) = (Vx(chip8, op) + Vy(chip8, op)) > 255;
     NEXT(chip8);
+}
+
+/* 8xy5 - SUB Vx, Vy 
+ * set Vx = Vx - Vy, set VF = NOT borrow */
+static void sub_vx_vy(chip8_t *chip8, uint16_t op) {
+    Vx(chip8, op) = (Vx(chip8, op) - Vy(chip8, op)) & 255;
+    VF_(chip8) = Vx(chip8, op) > Vy(chip8, op);
+    NEXT(chip8);
+}
+
+/* 8xy6 - SHR Vx, {, Vy}
+ * set Vx = SHR 1 */
+static void shr_vx(chip8_t *chip8, uint16_t op) {
+    VF_(chip8) = Vx(chip8, op) & 0x01;
+    Vx(chip8, op) = Vx(chip8, op) >> 1;
+    NEXT(chip8);
+}
+
+/* 8xy7 - SUBN Vx, Vy 
+ * set Vx = Vy - Vx, set VF = NOT borrow */
+static void subn_vx_vy(chip8_t *chip8, uint16_t op) {
+    Vx(chip8, op) = (Vy(chip8, op) - Vx(chip8, op)) & 255;
+    VF_(chip8) = Vy(chip8, op) > Vx(chip8, op);
+    NEXT(chip8);
+}
+
+/* 8xyE - SHL Vx, {, Vy}
+ * set Vx = SHL 1 */
+static void shl_vx(chip8_t *chip8, uint16_t op) {
+    VF_(chip8) = Vx(chip8, op) & 0x08;
+    Vx(chip8, op) = Vx(chip8, op) << 1;
+    NEXT(chip8);
+}
+
+/* 9xy0 - SNE Vx, Vy 
+ * skip next instruction if Vx != Vy */
+static void sne_vx_vy(chip8_t *chip8, uint16_t op) {
+    if (Vx(chip8, op) != Vy(chip8, op)) SKIP(chip8);
+    else NEXT(chip8);
 }
 
 /* Annn */
