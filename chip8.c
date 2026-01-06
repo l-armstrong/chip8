@@ -187,6 +187,7 @@ void *xmalloc(size_t size) {
 /* Operand Helpers */
 #define Vx(c,op)       VX(&(c)->cpu, X(op))
 #define Vy(c,op)       VX(&(c)->cpu, Y(op))
+#define VF_(c)         VF(&(c)->cpu)
 
 static void op_unknown(chip8_t *chip8, uint16_t op) {
     printf("unknown opcode: %04X\n", op);
@@ -249,23 +250,56 @@ static void se_vx_vy(chip8_t *chip8, uint16_t op) {
     else NEXT(chip8);
 }
 
-/* 6xkk (load) */
+/* 6xkk - LD Vx, byte 
+ * set Vx = kk */
 static void ld_vx_kk(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE 6xkk\n");
-    VX(&chip8->cpu, X(op)) = KK(op);
-    chip8->cpu.PC += 2;
+    Vx(chip8, op) = KK(op);
+    NEXT(chip8);
 }
 
-/* 7xkk (add) */
+/* 7xkk - ADD Vx, byte 
+ * set Vx = Vx + kk */
 static void add_vx_kk(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE 7xkk\n");
-    VX(&chip8->cpu, X(op)) = (VX(&chip8->cpu, X(op)) + KK(op)) & 255;
-    chip8->cpu.PC += 2;
+    Vx(chip8, op) = (Vx(chip8, op) + KK(op)) & 255;
+    NEXT(chip8);
 }
-/* 1NNN (jump) */
-static void jp_nnn(chip8_t *chip8, uint16_t op) {
-    printf("RUNNING OPCODE 1nnn\n");
-    chip8->cpu.PC = NNN(op);
+
+/* 8xy0 - LD Vx, Vy
+ * set Vx = Vy */
+static void ld_vx_vy(chip8_t *chip8, uint16_t op) {
+    Vx(chip8, op) = Vy(chip8, op);
+    NEXT(chip8);
+}
+
+/* 8xy1 - OR Vx, Vy
+ * set Vx = Vx OR Vy */
+static void or_vx_vy(chip8_t *chip8, uint16_t op) {
+    Vx(chip8, op) = (Vx(chip8, op) | Vy(chip8, op)) & 255;
+    NEXT(chip8);
+}
+
+/* 8xy2 - AND Vx, Vy
+ * set Vx = Vx AND Vy */
+static void and_vx_vy(chip8_t *chip8, uint16_t op) {
+    Vx(chip8, op) = (Vx(chip8, op) & Vy(chip8, op)) & 255;
+    NEXT(chip8);
+}
+
+/* 8xy3 - XOR Vx, Vy
+ * set Vx = Vx XOR Vy */
+static void xor_vx_vy(chip8_t *chip8, uint16_t op) {
+    Vx(chip8, op) = (Vx(chip8, op) ^ Vy(chip8, op)) & 255;
+    NEXT(chip8);
+}
+
+/* 8xy4 - ADD Vx, Xy 
+ * Vx = Vx + Vy, set VF = carry */
+static void add_vx_vy(chip8_t *chip8, uint16_t op) {
+    Vx(chip8, op) = Vx(chip8, op) + Vy(chip8, op);
+    VF_(chip8) = (Vx(chip8, op) + Vy(chip8, op)) > 255;
+    NEXT(chip8);
 }
 
 /* Annn */
@@ -340,7 +374,7 @@ void chip8_load_instructions(chip8_instructions_t *chip8_instructions) {
     for (int i = 0; i < 256; i++) chip8_instructions->opF[i] = op_unknown;
 
     chip8_instructions->primary[0x0] = route_0;
-    chip8_instructions->primary[0x1] = jp_nnn;
+    chip8_instructions->primary[0x1] = jp_addr;
     chip8_instructions->primary[0x6] = ld_vx_kk;
     chip8_instructions->primary[0x7] = add_vx_kk;
     chip8_instructions->primary[0xA] = ld_i_nnn;
