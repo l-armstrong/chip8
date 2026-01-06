@@ -161,12 +161,29 @@ void *xmalloc(size_t size) {
 #define OP_LO(op)     ((op) & 0xFF)
 
 /* State access helpers */
-#define V(c, i)    ((c)->cpu.V[(i) & 0xF])
-#define IREG(c)    ((c)->cpu.I)
-#define PC(c)      ((c)->cpu.PC)
+#define V(c, i)       ((c)->cpu.V[(i) & 0xF])
+#define IREG(c)       ((c)->cpu.I)
+#define PC(c)         ((c)->cpu.PC)
+
 /* Register access helpers */
-#define VX(cpu, x) ((cpu)->V[(x) & 0xF])
-#define VF(cpu)    ((cpu)->V[0xF])
+#define VX(cpu, x)    ((cpu)->V[(x) & 0xF])
+#define VF(cpu)       ((cpu)->V[0xF])
+
+/* Flow helpers */
+#define NEXT(c)        (PC(c) += 2)
+#define SKIP(c)        (PC(c) += 4)
+#define JUMP(c,a)      (PC(c) = (uint16_t)((a) & 0x0FFF))
+
+/* Display helpers */
+#define W              ((c)->display.width)
+#define H              ((c)->display.height)
+#define PIXIDX(c,x,y)  ((uint16_t)((y) * W(c) + (x)))
+#define PIXEL(c,x,y)   ((c)->display.buf[PIXIDX((c),(x),(y))])
+
+#define MEM(c,a)       ((c)->mem.map[(a) & 0x0FFF])
+#define BIT(byte,i).   (((byte) >> (i)) & 1u)
+
+/* Memory helpers */
 
 static void op_unknown(chip8_t *chip8, uint16_t op) {
     printf("unknown opcode: %04X\n", op);
