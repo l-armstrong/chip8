@@ -193,15 +193,60 @@ static void op_unknown(chip8_t *chip8, uint16_t op) {
     exit(1);
 }
 
+/* 0nnn - sys addr 
+ * jump to a machine routine at nnn
+ * note: this instruction is ignored by modern interpreters */
 static void sys_ignored(chip8_t *chip8, uint16_t op) {
     chip8->cpu.PC += 2;
 }
 
-/* 00e0 CLS */
+/* 00e0 - CLS 
+ * clear the display */
 static void cls(chip8_t *chip8, uint16_t op) {
     printf("CLS: clear screen\n");
     memset(chip8->display.buf, 0, sizeof(chip8->display.buf));
     chip8->cpu.PC += 2;
+}
+
+/* 00ee - RET
+ * return from a subroutine */
+static void ret(chip8_t *chip8, uint16_t op) {
+    chip8->cpu.PC = chip8->stack.data[chip8->stack.sp - 1];
+    chip8->stack.sp--;
+}
+
+/* 1nnn - JP addr
+ * jump to location nnn */
+static void jp_addr(chip8_t *chip8, uint16_t op) {
+    PC(chip8) = NNN(op);
+}
+
+/* 2nnn - Call addr 
+ * call subroutine at nnn */
+static void call_addr(chip8_t *chip8, uint16_t op) {
+    chip8->stack.data[chip8->stack.sp++] = chip8->cpu.PC;
+    PC(chip8) = NNN(op);
+}
+
+/* 3xkk - SE Vx, byte
+ * skip next instruction if Vx = kk */
+static void se_vx_byte(chip8_t *chip8, uint16_t op) {
+    if (Vx(chip8, op) == KK(op)) SKIP(chip8);
+    else NEXT(chip8);
+}
+
+/* 4xkk - SNE Vx, byte 
+ * skip next instruction if Vx != kk */
+static void sne_vx_byte(chip8_t *chip8, uint16_t op) {
+    if (Vx(chip8, op) != KK(op)) SKIP(chip8);
+    else NEXT(chip8);
+}
+
+/* 5xy0 - SE Vx, Vy 
+ * skip next instruction if Vx = Vy */
+static void se_vx_vy(chip8_t *chip8, uint16_t op) {
+    if (Vx(chip8, op) == Vy(chip8, op)) SKIP(chip8);
+    else NEXT(chip8);
 }
 
 /* 6xkk (load) */
