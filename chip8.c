@@ -153,12 +153,12 @@ void *xmalloc(size_t size) {
 
 /*=========================================== Chip8 Instructions ==================================================== */
 /* GET Opcode Helpers */
-#define OP_X(op)      (((op) >> 8) & 0xF)
-#define OP_Y(op)      (((op) >> 4) & 0xF)
-#define OP_KK(op)     ((op) & 0xFF)
-#define OP_NNN(op)    ((op) & 0x0FFF)
-#define OP_N(op)      ((op) & 0xF)
-#define OP_LO(op)     ((op) & 0xFF)
+#define X(op)         (((op) >> 8) & 0xF)
+#define Y(op)         (((op) >> 4) & 0xF)
+#define KK(op)        ((op) & 0xFF)
+#define NNN(op)       ((op) & 0x0FFF)
+#define N(op)         ((op) & 0xF)
+#define LO(op)        ((op) & 0xFF)
 
 /* State access helpers */
 #define V(c, i)       ((c)->cpu.V[(i) & 0xF])
@@ -175,55 +175,103 @@ void *xmalloc(size_t size) {
 #define JUMP(c,a)      (PC(c) = (uint16_t)((a) & 0x0FFF))
 
 /* Display helpers */
-#define W              ((c)->display.width)
-#define H              ((c)->display.height)
+#define W(c)           ((c)->display.width)
+#define H(c)           ((c)->display.height)
 #define PIXIDX(c,x,y)  ((uint16_t)((y) * W(c) + (x)))
 #define PIXEL(c,x,y)   ((c)->display.buf[PIXIDX((c),(x),(y))])
 
-#define MEM(c,a)       ((c)->mem.map[(a) & 0x0FFF])
-#define BIT(byte,i).   (((byte) >> (i)) & 1u)
-
 /* Memory helpers */
+#define MEM(c,a)       ((c)->mem.map[(a) & 0x0FFF])
+#define BIT(byte,i)    (((byte) >> (i)) & 1u)
+
+/* Operand Helpers */
+#define Vx(c,op)       VX(&(c)->cpu, X(op))
+#define Vy(c,op)       VX(&(c)->cpu, Y(op))
 
 static void op_unknown(chip8_t *chip8, uint16_t op) {
     printf("unknown opcode: %04X\n", op);
     exit(1);
 }
 
+/* 0nnn - sys addr 
+ * jump to a machine routine at nnn
+ * note: this instruction is ignored by modern interpreters */
 static void sys_ignored(chip8_t *chip8, uint16_t op) {
     chip8->cpu.PC += 2;
 }
 
-/* 00e0 CLS */
+/* 00e0 - CLS 
+ * clear the display */
 static void cls(chip8_t *chip8, uint16_t op) {
     printf("CLS: clear screen\n");
     memset(chip8->display.buf, 0, sizeof(chip8->display.buf));
     chip8->cpu.PC += 2;
 }
 
+/* 00ee - RET
+ * return from a subroutine */
+static void ret(chip8_t *chip8, uint16_t op) {
+    chip8->cpu.PC = chip8->stack.data[chip8->stack.sp - 1];
+    chip8->stack.sp--;
+}
+
+/* 1nnn - JP addr
+ * jump to location nnn */
+static void jp_addr(chip8_t *chip8, uint16_t op) {
+    PC(chip8) = NNN(op);
+}
+
+/* 2nnn - Call addr 
+ * call subroutine at nnn */
+static void call_addr(chip8_t *chip8, uint16_t op) {
+    chip8->stack.data[chip8->stack.sp++] = chip8->cpu.PC;
+    PC(chip8) = NNN(op);
+}
+
+/* 3xkk - SE Vx, byte
+ * skip next instruction if Vx = kk */
+static void se_vx_byte(chip8_t *chip8, uint16_t op) {
+    if (Vx(chip8, op) == KK(op)) SKIP(chip8);
+    else NEXT(chip8);
+}
+
+/* 4xkk - SNE Vx, byte 
+ * skip next instruction if Vx != kk */
+static void sne_vx_byte(chip8_t *chip8, uint16_t op) {
+    if (Vx(chip8, op) != KK(op)) SKIP(chip8);
+    else NEXT(chip8);
+}
+
+/* 5xy0 - SE Vx, Vy 
+ * skip next instruction if Vx = Vy */
+static void se_vx_vy(chip8_t *chip8, uint16_t op) {
+    if (Vx(chip8, op) == Vy(chip8, op)) SKIP(chip8);
+    else NEXT(chip8);
+}
+
 /* 6xkk (load) */
 static void ld_vx_kk(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE 6xkk\n");
-    VX(&chip8->cpu, OP_X(op)) = OP_KK(op);
+    VX(&chip8->cpu, X(op)) = KK(op);
     chip8->cpu.PC += 2;
 }
 
 /* 7xkk (add) */
 static void add_vx_kk(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE 7xkk\n");
-    VX(&chip8->cpu, OP_X(op)) = (VX(&chip8->cpu, OP_X(op)) + OP_KK(op)) & 255;
+    VX(&chip8->cpu, X(op)) = (VX(&chip8->cpu, X(op)) + KK(op)) & 255;
     chip8->cpu.PC += 2;
 }
 /* 1NNN (jump) */
 static void jp_nnn(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE 1nnn\n");
-    chip8->cpu.PC = OP_NNN(op);
+    chip8->cpu.PC = NNN(op);
 }
 
 /* Annn */
 static void ld_i_nnn(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE Annn\n");
-    chip8->cpu.I = OP_NNN(op);
+    chip8->cpu.I = NNN(op);
     chip8->cpu.PC += 2;
 }
 
@@ -232,9 +280,9 @@ static void drw_vx_vy_n(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE Dxyn\n");
     VF(&chip8->cpu) = 0;
 
-    const uint8_t x0 = VX(&chip8->cpu, OP_X(op));
-    const uint8_t y0 = VX(&chip8->cpu, OP_Y(op));
-    const uint8_t n =  OP_N(op);
+    const uint8_t x0 = VX(&chip8->cpu, X(op));
+    const uint8_t y0 = VX(&chip8->cpu, Y(op));
+    const uint8_t n =  N(op);
 
     for (uint8_t row = 0; row < n; row++) {
         uint16_t addr = chip8->cpu.I + row;
