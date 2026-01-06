@@ -175,15 +175,18 @@ void *xmalloc(size_t size) {
 #define JUMP(c,a)      (PC(c) = (uint16_t)((a) & 0x0FFF))
 
 /* Display helpers */
-#define W              ((c)->display.width)
-#define H              ((c)->display.height)
+#define W(c)           ((c)->display.width)
+#define H(c)           ((c)->display.height)
 #define PIXIDX(c,x,y)  ((uint16_t)((y) * W(c) + (x)))
 #define PIXEL(c,x,y)   ((c)->display.buf[PIXIDX((c),(x),(y))])
 
-#define MEM(c,a)       ((c)->mem.map[(a) & 0x0FFF])
-#define BIT(byte,i).   (((byte) >> (i)) & 1u)
-
 /* Memory helpers */
+#define MEM(c,a)       ((c)->mem.map[(a) & 0x0FFF])
+#define BIT(byte,i)    (((byte) >> (i)) & 1u)
+
+/* Operand Helpers */
+#define Vx(c,op)       VX(&(c)->cpu, X(op))
+#define Vy(c,op)       VX(&(c)->cpu, Y(op))
 
 static void op_unknown(chip8_t *chip8, uint16_t op) {
     printf("unknown opcode: %04X\n", op);
