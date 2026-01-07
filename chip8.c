@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
 #include <SDL2/SDL.h>
 
 /*=========================================== Data Structures ==================================================== */
@@ -162,7 +164,7 @@ void *xmalloc(size_t size) {
 
 /* State access helpers */
 #define V(c, i)       ((c)->cpu.V[(i) & 0xF])
-#define IREG(c)       ((c)->cpu.I)
+#define I(c)          ((c)->cpu.I)
 #define PC(c)         ((c)->cpu.PC)
 
 /* Register access helpers */
@@ -341,14 +343,31 @@ static void sne_vx_vy(chip8_t *chip8, uint16_t op) {
     else NEXT(chip8);
 }
 
-/* Annn */
+/* Annn - LD I, addr 
+ * set I = nnn */
 static void ld_i_nnn(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE Annn\n");
-    chip8->cpu.I = NNN(op);
-    chip8->cpu.PC += 2;
+    I(chip8) = NNN(op);
+    NEXT(chip8);
 }
 
-/* Dxyn */
+/* Bnnn - JP V0, addr 
+ * jump to location nnn + V0 */
+static void ld_v0_addr(chip8_t *chip8, uint16_t op) {
+    PC(chip8) = NNN(op) + Vx(chip8, 0);
+    NEXT(chip8);
+}
+
+/* Cxkk - RND Vx, byte 
+ * set Vx = random byte AND kk */
+static void rnd_vx_byte(chip8_t *chip8, uint16_t op) {
+    uint8_t r = rand() & 0xFF;
+    Vx(chip8, op) = r & KK(op);
+    NEXT(chip8);
+}
+
+/* Dxyn - DRW Vx, Vy, nibble
+ * display n-byte sprite starting at memory location I at (Vx, Vy), set VV = collision */
 static void drw_vx_vy_n(chip8_t *chip8, uint16_t op) {
     printf("RUNNING OPCODE Dxyn\n");
     VF(&chip8->cpu) = 0;
@@ -380,6 +399,74 @@ static void drw_vx_vy_n(chip8_t *chip8, uint16_t op) {
     }
     chip8->cpu.PC += 2;
 }
+
+/* Ex9E - SKP Vx
+ * skip next instruction if key with the value of Vx is pressed */
+static void skp_vx(chip8_t *chip8, uint16_t op) {
+
+}
+
+/* ExA1 - SKNP Vx 
+ * skip next instruction if key with the value of Vx is not pressed. */
+static void sknp_vx(chip8_t *chip8, uint16_t op) {
+
+}
+
+/* Fx07 - LD Vx, DT 
+ * set Vx = delay timer value */
+static void ld_vx_dt(chip8_t *chip8, uint16_t op) {
+
+}
+
+/* Fx0A - LD Vx, K
+ * wait for a key press, store the value of they key in Vx */
+static void ld_vx_k(chip8_t *chip8, uint16_t op) {
+
+}
+
+/* Fx15 - LD DT, Vx 
+ * set delay timer = Vx */
+static void ld_dt_vx(chip8_t *chip8, uint16_t op) {
+
+}
+
+/* Fx18 - LD ST, Vx 
+ * set sound timer = Vx */
+static void ld_st_vx(chip8_t *chip8, uint16_t op) {
+
+}
+
+/* Fx1E - ADD I, Vx 
+ * set I = I + Vx */
+static void add_i_vx(chip8_t *chip8, uint16_t op) {
+    I(chip8) = I(chip8) + Vx(chip8, op);
+    NEXT(chip8);
+}
+
+/* Fx29 - LD F, Vx 
+ * set I = location of sprite for digit Vx */
+static void ld_f_vx(chip8_t *chip8, uint16_t op) {
+
+}
+
+/* Fx33 - LD B, Vx
+ * store BCD representation of Vx in memory location I, I +1, I+2 */
+static void ld_b_vx(chip8_t *chip8, uint16_t op) {
+
+}
+
+/* Fx55 - LD [I], Vx 
+ * store registers V0 through Vx in memory starting at location I */
+static void ld_loc_i_vx(chip8_t *chip8, uint16_t op) {
+
+}
+
+/* Fx65 - LD Vx, [I]
+ * read registers V0 through Vx from memory starting at location I */
+static void ld_vx_loc_i(chip8_t *chip8, uint16_t op) {
+    
+}
+
 
 static void route_0(chip8_t *chip8, uint16_t op) {
     printf("Dispatching route 0\n"); 
@@ -437,6 +524,8 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Usage: %s <program.ch8>\n", argv[0]);
         return 1;
     }
+
+    srand((unsigned)time(NULL));
 
     /* Read the program into memory */
     FILE *fp = fopen(argv[1], "rb");
