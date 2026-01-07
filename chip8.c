@@ -436,13 +436,15 @@ static void drw_vx_vy_n(chip8_t *chip8, uint16_t op) {
 /* Ex9E - SKP Vx
  * skip next instruction if key with the value of Vx is pressed */
 static void skp_vx(chip8_t *chip8, uint16_t op) {
-
+    if (chip8->keyboard.keys[Vx(chip8, op)]) SKIP(chip8);
+    else NEXT(chip8);
 }
 
 /* ExA1 - SKNP Vx 
  * skip next instruction if key with the value of Vx is not pressed. */
 static void sknp_vx(chip8_t *chip8, uint16_t op) {
-
+    if (!chip8->keyboard.keys[Vx(chip8, op)]) SKIP(chip8);
+    else NEXT(chip8); 
 }
 
 /* Fx07 - LD Vx, DT 
@@ -452,9 +454,15 @@ static void ld_vx_dt(chip8_t *chip8, uint16_t op) {
 }
 
 /* Fx0A - LD Vx, K
- * wait for a key press, store the value of they key in Vx */
+ * wait for a key press, store the value of the key in Vx */
 static void ld_vx_k(chip8_t *chip8, uint16_t op) {
-
+    for (int i = 0; i < 16; i++) {
+        if (chip8->keyboard.keys[i]) {
+            Vx(chip8, op) = i;
+            NEXT(chip8);
+            return;
+        }
+    }
 }
 
 /* Fx15 - LD DT, Vx 
