@@ -12,18 +12,18 @@ typedef struct memory_t {
 } memory_t;
 
 typedef struct stack16_t {
-    uint16_t data[16];       // used to store the address that the interpreter should return to
+    uint16_t data[16];       /* used to store the address that the interpreter should return to */
     uint8_t  sp;
 } stack16_t;
 
 typedef struct cpu_t {
-    uint8_t  V[16];          // 0xVF // used as a flag by some instructions
-    uint16_t I;              // used to store memory addresses
+    uint8_t  V[16];          /* V0xF is used as a flag by some instructions */
+    uint16_t I;              /* used to store memory addresses */
     uint16_t PC;
 } cpu_t;
  
 typedef struct keyboard_t {
-    uint8_t      keys[16];        // 0x0 => 0xF
+    uint8_t      keys[16];   /* 0x0 => 0xF */
 } keyboard_t;
 
 typedef struct display_t {
@@ -134,11 +134,50 @@ void update_window(chip8_t *chip8) {
 }
 
 /*============================================  User Input  ==================================================== */
+static int sdl_key_to_chip8(SDL_Keycode key) {
+    switch (key) {
+        case SDLK_x: return 0x0;
+        case SDLK_1: return 0x1;
+        case SDLK_2: return 0x2;
+        case SDLK_3: return 0x3;
+        case SDLK_q: return 0x4;
+        case SDLK_w: return 0x5;
+        case SDLK_e: return 0x6;
+        case SDLK_a: return 0x7;
+        case SDLK_s: return 0x8;
+        case SDLK_d: return 0x9;
+        case SDLK_z: return 0xA;
+        case SDLK_c: return 0xB;
+        case SDLK_4: return 0xC;
+        case SDLK_r: return 0xD;
+        case SDLK_f: return 0xE;
+        case SDLK_v: return 0xF;
+        default:     return -1;
+    }
+}
+
+#define KEY_UP   0
+#define KEY_DOWN 1
 void handle_input(chip8_t *chip8) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
-        if (e.type == SDL_QUIT) {
-            chip8->power = OFF;
+        switch (e.type) {
+            case SDL_QUIT:
+                chip8->power = OFF;
+                break;
+            case SDL_KEYDOWN: {
+                int k = sdl_key_to_chip8(e.key.keysym.sym);
+                if (k != -1)
+                    chip8->keyboard.keys[k] = KEY_DOWN;
+                break;
+            }
+            case SDL_KEYUP: {
+                int k = sdl_key_to_chip8(e.key.keysym.sym);
+                if (k != -1) {
+                    chip8->keyboard.keys[k] = 0;
+                }
+                break;
+            }
         }
     }
 }
