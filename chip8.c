@@ -8,29 +8,29 @@
 
 /*=========================================== Data Structures ==================================================== */
 typedef struct memory_t {
-    uint8_t map[4096];
+    uint8_t  map[4096];
 } memory_t;
 
 typedef struct stack16_t {
-    uint16_t data[16];       // used to store the address that the interpreter should return to
+    uint16_t data[16];       /* used to store the address that the interpreter should return to */
     uint8_t  sp;
 } stack16_t;
 
 typedef struct cpu_t {
-    uint8_t  V[16];          // 0xVF // used as a flag by some instructions
-    uint16_t I;              // used to store memory addresses
+    uint8_t  V[16];          /* V0xF is used as a flag by some instructions */
+    uint16_t I;              /* used to store memory addresses */
     uint16_t PC;
 } cpu_t;
  
 typedef struct keyboard_t {
-    uint8_t keys[16];        // 0x0 => 0xF
+    uint8_t      keys[16];   /* 0x0 => 0xF */
 } keyboard_t;
 
 typedef struct display_t {
-    uint8_t  buf[64*32];
-    uint8_t  width;
-    uint8_t  height;
-    uint16_t scale;
+    uint8_t      buf[64*32];
+    uint8_t      width;
+    uint8_t      height;
+    uint16_t     scale;
     SDL_Window   *window;
     SDL_Renderer *renderer;
 } display_t;
@@ -134,11 +134,50 @@ void update_window(chip8_t *chip8) {
 }
 
 /*============================================  User Input  ==================================================== */
+static int sdl_key_to_chip8(SDL_Keycode key) {
+    switch (key) {
+        case SDLK_x: return 0x0;
+        case SDLK_1: return 0x1;
+        case SDLK_2: return 0x2;
+        case SDLK_3: return 0x3;
+        case SDLK_q: return 0x4;
+        case SDLK_w: return 0x5;
+        case SDLK_e: return 0x6;
+        case SDLK_a: return 0x7;
+        case SDLK_s: return 0x8;
+        case SDLK_d: return 0x9;
+        case SDLK_z: return 0xA;
+        case SDLK_c: return 0xB;
+        case SDLK_4: return 0xC;
+        case SDLK_r: return 0xD;
+        case SDLK_f: return 0xE;
+        case SDLK_v: return 0xF;
+        default:     return -1;
+    }
+}
+
+#define KEY_UP   0
+#define KEY_DOWN 1
 void handle_input(chip8_t *chip8) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
-        if (e.type == SDL_QUIT) {
-            chip8->power = OFF;
+        switch (e.type) {
+            case SDL_QUIT:
+                chip8->power = OFF;
+                break;
+            case SDL_KEYDOWN: {
+                int k = sdl_key_to_chip8(e.key.keysym.sym);
+                if (k != -1)
+                    chip8->keyboard.keys[k] = KEY_DOWN;
+                break;
+            }
+            case SDL_KEYUP: {
+                int k = sdl_key_to_chip8(e.key.keysym.sym);
+                if (k != -1) {
+                    chip8->keyboard.keys[k] = 0;
+                }
+                break;
+            }
         }
     }
 }
@@ -190,11 +229,6 @@ void *xmalloc(size_t size) {
 #define Vx(c,op)       VX(&(c)->cpu, X(op))
 #define Vy(c,op)       VX(&(c)->cpu, Y(op))
 #define VF_(c)         VF(&(c)->cpu)
-
-static void op_unknown(chip8_t *chip8, uint16_t op) {
-    printf("unknown opcode: %04X\n", op);
-    exit(1);
-}
 
 /* 0nnn - sys addr 
  * jump to a machine routine at nnn
@@ -353,9 +387,8 @@ static void ld_i_nnn(chip8_t *chip8, uint16_t op) {
 
 /* Bnnn - JP V0, addr 
  * jump to location nnn + V0 */
-static void ld_v0_addr(chip8_t *chip8, uint16_t op) {
-    PC(chip8) = NNN(op) + Vx(chip8, 0);
-    NEXT(chip8);
+static void jp_v0_addr(chip8_t *chip8, uint16_t op) {
+    PC(chip8) = NNN(op) + Vx(chip8, V(chip8, 0));
 }
 
 /* Cxkk - RND Vx, byte 
@@ -403,13 +436,15 @@ static void drw_vx_vy_n(chip8_t *chip8, uint16_t op) {
 /* Ex9E - SKP Vx
  * skip next instruction if key with the value of Vx is pressed */
 static void skp_vx(chip8_t *chip8, uint16_t op) {
-
+    if (chip8->keyboard.keys[Vx(chip8, op)]) SKIP(chip8);
+    else NEXT(chip8);
 }
 
 /* ExA1 - SKNP Vx 
  * skip next instruction if key with the value of Vx is not pressed. */
 static void sknp_vx(chip8_t *chip8, uint16_t op) {
-
+    if (!chip8->keyboard.keys[Vx(chip8, op)]) SKIP(chip8);
+    else NEXT(chip8); 
 }
 
 /* Fx07 - LD Vx, DT 
@@ -419,9 +454,15 @@ static void ld_vx_dt(chip8_t *chip8, uint16_t op) {
 }
 
 /* Fx0A - LD Vx, K
- * wait for a key press, store the value of they key in Vx */
+ * wait for a key press, store the value of the key in Vx */
 static void ld_vx_k(chip8_t *chip8, uint16_t op) {
-
+    for (int i = 0; i < 16; i++) {
+        if (chip8->keyboard.keys[i]) {
+            Vx(chip8, op) = i;
+            NEXT(chip8);
+            return;
+        }
+    }
 }
 
 /* Fx15 - LD DT, Vx 
@@ -464,13 +505,34 @@ static void ld_loc_i_vx(chip8_t *chip8, uint16_t op) {
 /* Fx65 - LD Vx, [I]
  * read registers V0 through Vx from memory starting at location I */
 static void ld_vx_loc_i(chip8_t *chip8, uint16_t op) {
-    
+
 }
 
+/* Used to fill in function table for unknown opcodes */
+static void op_unknown(chip8_t *chip8, uint16_t op) {
+    printf("unknown opcode: %04X\n", op);
+    exit(1);
+}
 
+/*====================================== Instruction Routers ================================================ */
 static void route_0(chip8_t *chip8, uint16_t op) {
     printf("Dispatching route 0\n"); 
     chip8->instrs->op0[op & 0xFF](chip8, op);
+}
+
+static void route_8(chip8_t *chip8, uint16_t op) {
+    printf("Dispatching route 0\n"); 
+    chip8->instrs->op8[op & 0xFF](chip8, op);
+}
+
+static void route_E(chip8_t *chip8, uint16_t op) {
+    printf("Dispatching route 0\n"); 
+    chip8->instrs->opE[op & 0xFF](chip8, op);
+}
+
+static void route_F(chip8_t *chip8, uint16_t op) {
+    printf("Dispatching route 0\n"); 
+    chip8->instrs->opF[op & 0xFF](chip8, op);
 }
 
 /*=========================================== Chip8 Init ==================================================== */
@@ -499,14 +561,53 @@ void chip8_load_instructions(chip8_instructions_t *chip8_instructions) {
     for (int i = 0; i < 256; i++) chip8_instructions->opE[i] = op_unknown;
     for (int i = 0; i < 256; i++) chip8_instructions->opF[i] = op_unknown;
 
+    /* primary dispatch */
     chip8_instructions->primary[0x0] = route_0;
     chip8_instructions->primary[0x1] = jp_addr;
+    chip8_instructions->primary[0x2] = call_addr;
+    chip8_instructions->primary[0x3] = se_vx_byte;
+    chip8_instructions->primary[0x4] = sne_vx_byte;
+    chip8_instructions->primary[0x5] = se_vx_vy;     
     chip8_instructions->primary[0x6] = ld_vx_kk;
     chip8_instructions->primary[0x7] = add_vx_kk;
+    chip8_instructions->primary[0x8] = route_8;
+    chip8_instructions->primary[0x9] = sne_vx_vy;    
     chip8_instructions->primary[0xA] = ld_i_nnn;
+    chip8_instructions->primary[0xB] = jp_v0_addr;   
+    chip8_instructions->primary[0xC] = rnd_vx_byte;
     chip8_instructions->primary[0xD] = drw_vx_vy_n;
+    chip8_instructions->primary[0xE] = route_E;
+    chip8_instructions->primary[0xF] = route_F;
 
+    /* 0x00** group */
     chip8_instructions->op0[0xE0] = cls;
+    chip8_instructions->op0[0xEE] = ret;
+
+    /* 0x8xy* group */
+    chip8_instructions->op8[0x0] = ld_vx_vy;
+    chip8_instructions->op8[0x1] = or_vx_vy;
+    chip8_instructions->op8[0x2] = and_vx_vy;
+    chip8_instructions->op8[0x3] = xor_vx_vy;
+    chip8_instructions->op8[0x4] = add_vx_vy;
+    chip8_instructions->op8[0x5] = sub_vx_vy;
+    chip8_instructions->op8[0x6] = shr_vx;
+    chip8_instructions->op8[0x7] = subn_vx_vy;
+    chip8_instructions->op8[0xE] = shl_vx;
+
+    /* 0xEx** group */
+    chip8_instructions->opE[0x9E] = skp_vx;
+    chip8_instructions->opE[0xA1] = sknp_vx;
+
+    /* 0xFx** group */
+    chip8_instructions->opF[0x07] = ld_vx_dt;
+    chip8_instructions->opF[0x0A] = ld_vx_k;
+    chip8_instructions->opF[0x15] = ld_dt_vx;
+    chip8_instructions->opF[0x18] = ld_st_vx;
+    chip8_instructions->opF[0x1E] = add_i_vx;
+    chip8_instructions->opF[0x29] = ld_f_vx;
+    chip8_instructions->opF[0x33] = ld_b_vx;
+    chip8_instructions->opF[0x55] = ld_loc_i_vx;
+    chip8_instructions->opF[0x65] = ld_vx_loc_i;
 }
 
 void chip8_exec(chip8_t *chip8) {
