@@ -62,7 +62,7 @@ typedef struct chip8_t {
     chip8_instructions_t *instrs;
 } chip8_t;
 
-
+#define FONT_BASE 0x050
 /*============================================  Window  ==================================================== */
 void launch_window(chip8_t *chip8) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
@@ -252,12 +252,14 @@ void *xmalloc(size_t size) {
  * jump to a machine routine at nnn
  * note: this instruction is ignored by modern interpreters */
 static void sys_ignored(chip8_t *chip8, uint16_t op) {
+    (void)op; /* silence unused parameter warning */
     NEXT(chip8);
 }
 
 /* 00e0 - CLS 
  * clear the display */
 static void cls(chip8_t *chip8, uint16_t op) {
+    (void)op; /* silence unused parameter warning */
     memset(chip8->display.buf, 0, sizeof(chip8->display.buf));
     NEXT(chip8);
 }
@@ -265,6 +267,7 @@ static void cls(chip8_t *chip8, uint16_t op) {
 /* 00ee - RET
  * return from a subroutine */
 static void ret(chip8_t *chip8, uint16_t op) {
+    (void)op; /* silence unused parameter warning */
     chip8->cpu.PC = chip8->stack.data[chip8->stack.sp - 1];
     chip8->stack.sp--;
 }
@@ -503,29 +506,47 @@ static void add_i_vx(chip8_t *chip8, uint16_t op) {
 /* Fx29 - LD F, Vx 
  * set I = location of sprite for digit Vx */
 static void ld_f_vx(chip8_t *chip8, uint16_t op) {
-
+    I(chip8) = FONT_BASE + (Vx(chip8, op) * 5);
+    NEXT(chip8);
 }
 
 /* Fx33 - LD B, Vx
  * store BCD representation of Vx in memory location I, I +1, I+2 */
 static void ld_b_vx(chip8_t *chip8, uint16_t op) {
+    uint8_t v = Vx(chip8, op);
 
+    MEM(chip8, I(chip8) + 0) = v / 100;
+    MEM(chip8, I(chip8) + 1) = (v / 10) % 10;
+    MEM(chip8, I(chip8) + 2) = v % 10;
+    NEXT(chip8);
 }
 
 /* Fx55 - LD [I], Vx 
  * store registers V0 through Vx in memory starting at location I */
 static void ld_loc_i_vx(chip8_t *chip8, uint16_t op) {
+    uint8_t x = X(op);
 
+    for (uint8_t i = 0; i <= x; i++) {
+        MEM(chip8, I(chip8) + i) = V(chip8, i); 
+    }
+    NEXT(chip8);
 }
 
 /* Fx65 - LD Vx, [I]
  * read registers V0 through Vx from memory starting at location I */
 static void ld_vx_loc_i(chip8_t *chip8, uint16_t op) {
+    uint8_t x = X(op);
 
+    for (uint8_t i = 0; i <= x; i++) {
+        V(chip8, i) = MEM(chip8, I(chip8) + i);
+    }
+    NEXT(chip8);
 }
 
 /* Used to fill in function table for unknown opcodes */
 static void op_unknown(chip8_t *chip8, uint16_t op) {
+    (void)chip8;    /* silence unused parameter warning */
+    (void)op;       /* silence unused parameter warning */
     fprintf(stderr, "unknown opcode: %04X\n", op);
     exit(1);
 }
@@ -548,16 +569,6 @@ static void route_F(chip8_t *chip8, uint16_t op) {
 }
 
 /*=========================================== Chip8 Init ==================================================== */
-void chip8_init(chip8_t *c) {
-    memset(c, 0, sizeof(*c));
-    c->instrs = NULL;
-    c->cpu.PC = 0x200;
-    c->power = ON;
-    c->display.scale = 10;
-    c->display.width = 64;
-    c->display.height = 32;
-}
-
 void chip8_load_program(chip8_t *chip8, uint8_t *chip8_program, size_t file_size) {
     if (file_size > (sizeof(chip8->mem.map) - 0x200)) {
         fprintf(stderr, "chip8 ROM too large: %zu bytes\n", file_size);
@@ -622,6 +633,42 @@ void chip8_load_instructions(chip8_instructions_t *chip8_instructions) {
     chip8_instructions->opF[0x65] = ld_vx_loc_i;
 }
 
+/* chip8 font set
+ * each character is 4x5 pixels, stored as 5 bytes
+ * most significant 4 bits are used */
+static const uint8_t chip8_fontset[16 * 5] = {
+    /* 0 */ 0xF0, 0x90, 0x90, 0x90, 0xF0,
+    /* 1 */ 0x20, 0x60, 0x20, 0x20, 0x70,
+    /* 2 */ 0xF0, 0x10, 0xF0, 0x80, 0xF0,
+    /* 3 */ 0xF0, 0x10, 0xF0, 0x10, 0xF0,
+    /* 4 */ 0x90, 0x90, 0xF0, 0x10, 0x10,
+    /* 5 */ 0xF0, 0x80, 0xF0, 0x10, 0xF0,
+    /* 6 */ 0xF0, 0x80, 0xF0, 0x90, 0xF0,
+    /* 7 */ 0xF0, 0x10, 0x20, 0x40, 0x40,
+    /* 8 */ 0xF0, 0x90, 0xF0, 0x90, 0xF0,
+    /* 9 */ 0xF0, 0x90, 0xF0, 0x10, 0xF0,
+    /* A */ 0xF0, 0x90, 0xF0, 0x90, 0x90,
+    /* B */ 0xE0, 0x90, 0xE0, 0x90, 0xE0,
+    /* C */ 0xF0, 0x80, 0x80, 0x80, 0xF0,
+    /* D */ 0xE0, 0x90, 0x90, 0x90, 0xE0,
+    /* E */ 0xF0, 0x80, 0xF0, 0x80, 0xF0,
+    /* F */ 0xF0, 0x80, 0xF0, 0x80, 0x80
+};
+
+void chip8_load_font(chip8_t *chip8) {
+    memcpy(&chip8->mem.map[FONT_BASE], chip8_fontset, sizeof(chip8_fontset));
+}
+
+void chip8_init(chip8_t *chip8) {
+    memset(chip8, 0, sizeof(*chip8));
+    chip8->instrs = NULL;
+    chip8->cpu.PC = 0x200;
+    chip8->power = ON;
+    chip8->display.scale = 10;
+    chip8->display.width = 64;
+    chip8->display.height = 32;
+}
+
 void chip8_exec(chip8_t *chip8) {
     if (chip8->cpu.PC > 4094) {
         chip8->power = OFF;
@@ -667,6 +714,7 @@ int main(int argc, char **argv) {
     chip8_instructions_t chip8_instructions;
     chip8_init(&chip8);
     chip8_load_program(&chip8, chip8_program, file_size);
+    chip8_load_font(&chip8);
     chip8_load_instructions(&chip8_instructions);
     chip8.instrs = &chip8_instructions;
 
