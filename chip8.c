@@ -8,7 +8,7 @@
 
 /*=========================================== Data Structures ==================================================== */
 typedef struct memory_t {
-    uint8_t map[4096];
+    uint8_t  map[4096];
 } memory_t;
 
 typedef struct stack16_t {
@@ -23,14 +23,14 @@ typedef struct cpu_t {
 } cpu_t;
  
 typedef struct keyboard_t {
-    uint8_t keys[16];        // 0x0 => 0xF
+    uint8_t      keys[16];        // 0x0 => 0xF
 } keyboard_t;
 
 typedef struct display_t {
-    uint8_t  buf[64*32];
-    uint8_t  width;
-    uint8_t  height;
-    uint16_t scale;
+    uint8_t      buf[64*32];
+    uint8_t      width;
+    uint8_t      height;
+    uint16_t     scale;
     SDL_Window   *window;
     SDL_Renderer *renderer;
 } display_t;
@@ -191,11 +191,6 @@ void *xmalloc(size_t size) {
 #define Vy(c,op)       VX(&(c)->cpu, Y(op))
 #define VF_(c)         VF(&(c)->cpu)
 
-static void op_unknown(chip8_t *chip8, uint16_t op) {
-    printf("unknown opcode: %04X\n", op);
-    exit(1);
-}
-
 /* 0nnn - sys addr 
  * jump to a machine routine at nnn
  * note: this instruction is ignored by modern interpreters */
@@ -353,9 +348,8 @@ static void ld_i_nnn(chip8_t *chip8, uint16_t op) {
 
 /* Bnnn - JP V0, addr 
  * jump to location nnn + V0 */
-static void ld_v0_addr(chip8_t *chip8, uint16_t op) {
-    PC(chip8) = NNN(op) + Vx(chip8, 0);
-    NEXT(chip8);
+static void jp_v0_addr(chip8_t *chip8, uint16_t op) {
+    PC(chip8) = NNN(op) + Vx(chip8, V(chip8, 0));
 }
 
 /* Cxkk - RND Vx, byte 
@@ -464,13 +458,34 @@ static void ld_loc_i_vx(chip8_t *chip8, uint16_t op) {
 /* Fx65 - LD Vx, [I]
  * read registers V0 through Vx from memory starting at location I */
 static void ld_vx_loc_i(chip8_t *chip8, uint16_t op) {
-    
+
 }
 
+/* Used to fill in function table for unknown opcodes */
+static void op_unknown(chip8_t *chip8, uint16_t op) {
+    printf("unknown opcode: %04X\n", op);
+    exit(1);
+}
 
+/*====================================== Instruction Routers ================================================ */
 static void route_0(chip8_t *chip8, uint16_t op) {
     printf("Dispatching route 0\n"); 
     chip8->instrs->op0[op & 0xFF](chip8, op);
+}
+
+static void route_8(chip8_t *chip8, uint16_t op) {
+    printf("Dispatching route 0\n"); 
+    chip8->instrs->op8[op & 0xFF](chip8, op);
+}
+
+static void route_E(chip8_t *chip8, uint16_t op) {
+    printf("Dispatching route 0\n"); 
+    chip8->instrs->opE[op & 0xFF](chip8, op);
+}
+
+static void route_F(chip8_t *chip8, uint16_t op) {
+    printf("Dispatching route 0\n"); 
+    chip8->instrs->opF[op & 0xFF](chip8, op);
 }
 
 /*=========================================== Chip8 Init ==================================================== */
@@ -499,14 +514,53 @@ void chip8_load_instructions(chip8_instructions_t *chip8_instructions) {
     for (int i = 0; i < 256; i++) chip8_instructions->opE[i] = op_unknown;
     for (int i = 0; i < 256; i++) chip8_instructions->opF[i] = op_unknown;
 
+    /* primary dispatch */
     chip8_instructions->primary[0x0] = route_0;
     chip8_instructions->primary[0x1] = jp_addr;
+    chip8_instructions->primary[0x2] = call_addr;
+    chip8_instructions->primary[0x3] = se_vx_byte;
+    chip8_instructions->primary[0x4] = sne_vx_byte;
+    chip8_instructions->primary[0x5] = se_vx_vy;     
     chip8_instructions->primary[0x6] = ld_vx_kk;
     chip8_instructions->primary[0x7] = add_vx_kk;
+    chip8_instructions->primary[0x8] = route_8;
+    chip8_instructions->primary[0x9] = sne_vx_vy;    
     chip8_instructions->primary[0xA] = ld_i_nnn;
+    chip8_instructions->primary[0xB] = jp_v0_addr;   
+    chip8_instructions->primary[0xC] = rnd_vx_byte;
     chip8_instructions->primary[0xD] = drw_vx_vy_n;
+    chip8_instructions->primary[0xE] = route_E;
+    chip8_instructions->primary[0xF] = route_F;
 
+    /* 0x00** group */
     chip8_instructions->op0[0xE0] = cls;
+    chip8_instructions->op0[0xEE] = ret;
+
+    /* 0x8xy* group */
+    chip8_instructions->op8[0x0] = ld_vx_vy;
+    chip8_instructions->op8[0x1] = or_vx_vy;
+    chip8_instructions->op8[0x2] = and_vx_vy;
+    chip8_instructions->op8[0x3] = xor_vx_vy;
+    chip8_instructions->op8[0x4] = add_vx_vy;
+    chip8_instructions->op8[0x5] = sub_vx_vy;
+    chip8_instructions->op8[0x6] = shr_vx;
+    chip8_instructions->op8[0x7] = subn_vx_vy;
+    chip8_instructions->op8[0xE] = shl_vx;
+
+    /* 0xEx** group */
+    chip8_instructions->opE[0x9E] = skp_vx;
+    chip8_instructions->opE[0xA1] = sknp_vx;
+
+    /* 0xFx** group */
+    chip8_instructions->opF[0x07] = ld_vx_dt;
+    chip8_instructions->opF[0x0A] = ld_vx_k;
+    chip8_instructions->opF[0x15] = ld_dt_vx;
+    chip8_instructions->opF[0x18] = ld_st_vx;
+    chip8_instructions->opF[0x1E] = add_i_vx;
+    chip8_instructions->opF[0x29] = ld_f_vx;
+    chip8_instructions->opF[0x33] = ld_b_vx;
+    chip8_instructions->opF[0x55] = ld_loc_i_vx;
+    chip8_instructions->opF[0x65] = ld_vx_loc_i;
 }
 
 void chip8_exec(chip8_t *chip8) {
