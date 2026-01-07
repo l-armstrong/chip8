@@ -182,6 +182,24 @@ void handle_input(chip8_t *chip8) {
     }
 }
 
+/*================================================  Time  ========================================================== */
+static void chip8_update_timers_60hz(chip8_t *chip8, uint32_t *last_ms, uint32_t *acc_ms) {
+    uint32_t now = SDL_GetTicks();
+    uint32_t dt = now - *last_ms;
+    *last_ms = now;
+
+    *acc_ms += dt;
+
+
+    /* 60Hz is 1000/60 = 16.6666... ms 
+    if a lot of time has passed catch up. */
+    while (*acc_ms >= 17) {
+        if (chip8->delay_timer > 0) chip8->delay_timer--;
+        if (chip8->sound_timer > 0) chip8->sound_timer--;
+        *acc_ms -= 17;
+    }
+}
+
 /*============================================ Utility Methods  ==================================================== */
 void *xmalloc(size_t size) {
     void *ptr = malloc(size);
@@ -240,7 +258,6 @@ static void sys_ignored(chip8_t *chip8, uint16_t op) {
 /* 00e0 - CLS 
  * clear the display */
 static void cls(chip8_t *chip8, uint16_t op) {
-    printf("CLS: clear screen\n");
     memset(chip8->display.buf, 0, sizeof(chip8->display.buf));
     NEXT(chip8);
 }
@@ -289,7 +306,6 @@ static void se_vx_vy(chip8_t *chip8, uint16_t op) {
 /* 6xkk - LD Vx, byte 
  * set Vx = kk */
 static void ld_vx_kk(chip8_t *chip8, uint16_t op) {
-    printf("RUNNING OPCODE 6xkk\n");
     Vx(chip8, op) = KK(op);
     NEXT(chip8);
 }
@@ -297,7 +313,6 @@ static void ld_vx_kk(chip8_t *chip8, uint16_t op) {
 /* 7xkk - ADD Vx, byte 
  * set Vx = Vx + kk */
 static void add_vx_kk(chip8_t *chip8, uint16_t op) {
-    printf("RUNNING OPCODE 7xkk\n");
     Vx(chip8, op) = (Vx(chip8, op) + KK(op)) & 255;
     NEXT(chip8);
 }
@@ -380,7 +395,6 @@ static void sne_vx_vy(chip8_t *chip8, uint16_t op) {
 /* Annn - LD I, addr 
  * set I = nnn */
 static void ld_i_nnn(chip8_t *chip8, uint16_t op) {
-    printf("RUNNING OPCODE Annn\n");
     I(chip8) = NNN(op);
     NEXT(chip8);
 }
@@ -402,7 +416,6 @@ static void rnd_vx_byte(chip8_t *chip8, uint16_t op) {
 /* Dxyn - DRW Vx, Vy, nibble
  * display n-byte sprite starting at memory location I at (Vx, Vy), set VV = collision */
 static void drw_vx_vy_n(chip8_t *chip8, uint16_t op) {
-    printf("RUNNING OPCODE Dxyn\n");
     VF(&chip8->cpu) = 0;
 
     const uint8_t x0 = VX(&chip8->cpu, X(op));
@@ -430,7 +443,7 @@ static void drw_vx_vy_n(chip8_t *chip8, uint16_t op) {
             chip8->display.buf[idx] ^= 1;
         }
     }
-    chip8->cpu.PC += 2;
+    NEXT(chip8);
 }
 
 /* Ex9E - SKP Vx
@@ -510,28 +523,24 @@ static void ld_vx_loc_i(chip8_t *chip8, uint16_t op) {
 
 /* Used to fill in function table for unknown opcodes */
 static void op_unknown(chip8_t *chip8, uint16_t op) {
-    printf("unknown opcode: %04X\n", op);
+    fprintf(stderr, "unknown opcode: %04X\n", op);
     exit(1);
 }
 
 /*====================================== Instruction Routers ================================================ */
 static void route_0(chip8_t *chip8, uint16_t op) {
-    printf("Dispatching route 0\n"); 
     chip8->instrs->op0[op & 0xFF](chip8, op);
 }
 
 static void route_8(chip8_t *chip8, uint16_t op) {
-    printf("Dispatching route 0\n"); 
     chip8->instrs->op8[op & 0xFF](chip8, op);
 }
 
 static void route_E(chip8_t *chip8, uint16_t op) {
-    printf("Dispatching route 0\n"); 
     chip8->instrs->opE[op & 0xFF](chip8, op);
 }
 
 static void route_F(chip8_t *chip8, uint16_t op) {
-    printf("Dispatching route 0\n"); 
     chip8->instrs->opF[op & 0xFF](chip8, op);
 }
 
@@ -556,10 +565,10 @@ void chip8_load_program(chip8_t *chip8, uint8_t *chip8_program, size_t file_size
 
 void chip8_load_instructions(chip8_instructions_t *chip8_instructions) {
     for (int i = 0; i < 16;  i++) chip8_instructions->primary[i] = op_unknown; 
-    for (int i = 0; i < 256; i++) chip8_instructions->op0[i] = sys_ignored;
-    for (int i = 0; i < 16;  i++) chip8_instructions->op8[i] = op_unknown;
-    for (int i = 0; i < 256; i++) chip8_instructions->opE[i] = op_unknown;
-    for (int i = 0; i < 256; i++) chip8_instructions->opF[i] = op_unknown;
+    for (int i = 0; i < 256; i++) chip8_instructions->op0[i]     = sys_ignored;
+    for (int i = 0; i < 16;  i++) chip8_instructions->op8[i]     = op_unknown;
+    for (int i = 0; i < 256; i++) chip8_instructions->opE[i]     = op_unknown;
+    for (int i = 0; i < 256; i++) chip8_instructions->opF[i]     = op_unknown;
 
     /* primary dispatch */
     chip8_instructions->primary[0x0] = route_0;
@@ -661,9 +670,16 @@ int main(int argc, char **argv) {
     launch_window(&chip8);
     clear_window(&chip8);
 
+    uint32_t last_ms = SDL_GetTicks();
+    uint32_t acc_ms = 0;
+
     while(chip8.power == ON) {
         handle_input(&chip8);
-        chip8_exec(&chip8);
+
+        for (int i = 0; i < 11; i++) 
+            chip8_exec(&chip8);
+
+        chip8_update_timers_60hz(&chip8, &last_ms, &acc_ms);
         update_window(&chip8);
     }
 
