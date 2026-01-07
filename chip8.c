@@ -463,7 +463,8 @@ static void sknp_vx(chip8_t *chip8, uint16_t op) {
 /* Fx07 - LD Vx, DT 
  * set Vx = delay timer value */
 static void ld_vx_dt(chip8_t *chip8, uint16_t op) {
-
+    Vx(chip8, op) = chip8->delay_timer;
+    NEXT(chip8);
 }
 
 /* Fx0A - LD Vx, K
@@ -481,13 +482,15 @@ static void ld_vx_k(chip8_t *chip8, uint16_t op) {
 /* Fx15 - LD DT, Vx 
  * set delay timer = Vx */
 static void ld_dt_vx(chip8_t *chip8, uint16_t op) {
-
+    chip8->delay_timer = Vx(chip8, op);
+    NEXT(chip8);
 }
 
 /* Fx18 - LD ST, Vx 
  * set sound timer = Vx */
 static void ld_st_vx(chip8_t *chip8, uint16_t op) {
-
+    chip8->sound_timer = Vx(chip8, op);
+    NEXT(chip8);
 }
 
 /* Fx1E - ADD I, Vx 
