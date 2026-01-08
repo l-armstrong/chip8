@@ -7,23 +7,28 @@
 #include <SDL2/SDL.h>
 
 /*=========================================== Data Structures ==================================================== */
+#define MAX_MEM_SIZE        4096
+#define MAX_STACK_SIZE      16 
+#define MAX_NUM_REGISTERS   16
+#define MAX_NUM_KEYS        16
+
 typedef struct memory_t {
-    uint8_t  map[4096];
+    uint8_t  map[MAX_MEM_SIZE];
 } memory_t;
 
 typedef struct stack16_t {
-    uint16_t data[16];       /* used to store the address that the interpreter should return to */
+    uint16_t data[MAX_STACK_SIZE];      /* used to store the address that the interpreter should return to */
     uint8_t  sp;
 } stack16_t;
 
 typedef struct cpu_t {
-    uint8_t  V[16];          /* V0xF is used as a flag by some instructions */
-    uint16_t I;              /* used to store memory addresses */
+    uint8_t  V[MAX_NUM_REGISTERS];      /* V0xF is used as a flag by some instructions */
+    uint16_t I;                         /* used to store memory addresses */
     uint16_t PC;
 } cpu_t;
  
 typedef struct keyboard_t {
-    uint8_t      keys[16];   /* 0x0 => 0xF */
+    uint8_t      keys[MAX_NUM_KEYS];    /* 0x0 => 0xF */
 } keyboard_t;
 
 typedef struct display_t {
@@ -166,6 +171,7 @@ void handle_input(chip8_t *chip8) {
                 chip8->power = OFF;
                 break;
             case SDL_KEYDOWN: {
+                if (e.key.keysym.sym == SDLK_ESCAPE) { chip8->power = OFF; break; }
                 int k = sdl_key_to_chip8(e.key.keysym.sym);
                 if (k != -1)
                     chip8->keyboard.keys[k] = KEY_DOWN;
@@ -231,11 +237,13 @@ void *xmalloc(size_t size) {
 /* Flow helpers */
 #define NEXT(c)        (PC(c) += 2)
 #define SKIP(c)        (PC(c) += 4)
-#define JUMP(c,a)      (PC(c) = (uint16_t)((a) & 0x0FFF))
+#define JUMP(c,a)      (PC(c) = (uint16_t)(a))
 
 /* Display helpers */
 #define W(c)           ((c)->display.width)
 #define H(c)           ((c)->display.height)
+#define WRAP_X(c,x)    ((uint8_t)((x) % W(c)))
+#define WRAP_Y(c,y)    ((uint8_t)((y) % H(c)))
 #define PIXIDX(c,x,y)  ((uint16_t)((y) * W(c) + (x)))
 #define PIXEL(c,x,y)   ((c)->display.buf[PIXIDX((c),(x),(y))])
 
@@ -359,8 +367,10 @@ static void add_vx_vy(chip8_t *chip8, uint16_t op) {
 /* 8xy5 - SUB Vx, Vy 
  * set Vx = Vx - Vy, set VF = NOT borrow */
 static void sub_vx_vy(chip8_t *chip8, uint16_t op) {
-    Vx(chip8, op) = (Vx(chip8, op) - Vy(chip8, op)) & 255;
-    VF_(chip8) = Vx(chip8, op) > Vy(chip8, op);
+    uint8_t vx = Vx(chip8, op);
+    uint8_t vy = Vy(chip8, op);
+    VF_(chip8) = vx >= vy;
+    Vx(chip8, op) = (uint8_t)(vx - vy);
     NEXT(chip8);
 }
 
@@ -375,8 +385,10 @@ static void shr_vx(chip8_t *chip8, uint16_t op) {
 /* 8xy7 - SUBN Vx, Vy 
  * set Vx = Vy - Vx, set VF = NOT borrow */
 static void subn_vx_vy(chip8_t *chip8, uint16_t op) {
-    Vx(chip8, op) = (Vy(chip8, op) - Vx(chip8, op)) & 255;
-    VF_(chip8) = Vy(chip8, op) > Vx(chip8, op);
+    uint8_t vx = Vx(chip8, op);
+    uint8_t vy = Vy(chip8, op);
+    VF_(chip8) = vy >= vx;
+    Vx(chip8, op) = (uint8_t)(vy - vx);
     NEXT(chip8);
 }
 
@@ -421,21 +433,21 @@ static void rnd_vx_byte(chip8_t *chip8, uint16_t op) {
 static void drw_vx_vy_n(chip8_t *chip8, uint16_t op) {
     VF(&chip8->cpu) = 0;
 
-    const uint8_t x0 = VX(&chip8->cpu, X(op));
-    const uint8_t y0 = VX(&chip8->cpu, Y(op));
+    const uint8_t x0 = Vx(chip8, op);
+    const uint8_t y0 = Vy(chip8, op);
     const uint8_t n =  N(op);
 
     for (uint8_t row = 0; row < n; row++) {
         uint16_t addr = chip8->cpu.I + row;
-        if (addr >= 4096) break;
+        if (addr >= MAX_MEM_SIZE) break;
         uint8_t sprite_byte = chip8->mem.map[addr];
 
         for (uint8_t bit = 0; bit < 8; bit++) {
             uint8_t sprite_pixel = (sprite_byte >> (7 - bit)) & 0x1;
             if (sprite_pixel == 0) continue;
 
-            uint8_t x = (uint8_t)((x0 + bit) % chip8->display.width);
-            uint8_t y = (uint8_t)((y0 + row) % chip8->display.height);
+            uint8_t x = WRAP_X(chip8, x0 + bit);
+            uint8_t y = WRAP_Y(chip8, y0 + row);
 
             uint16_t idx = (uint16_t)(y * chip8->display.width + x);
 
@@ -568,12 +580,18 @@ static void route_F(chip8_t *chip8, uint16_t op) {
 }
 
 /*=========================================== Chip8 Init ==================================================== */
+#define PROGRAM_COUNTER_BASE    0x200
+#define SCALE                   10
+#define WINDOW_WIDTH            64
+#define WINDOW_HEIGHT           32
+#define INSTRUCTIONS_PER_FRAME  11
+
 void chip8_load_program(chip8_t *chip8, uint8_t *chip8_program, size_t file_size) {
-    if (file_size > (sizeof(chip8->mem.map) - 0x200)) {
+    if (file_size > (sizeof(chip8->mem.map) - PROGRAM_COUNTER_BASE)) {
         fprintf(stderr, "chip8 ROM too large: %zu bytes\n", file_size);
         exit(1); 
     }
-    memcpy(&chip8->mem.map[0x200], chip8_program, file_size);
+    memcpy(&chip8->mem.map[PROGRAM_COUNTER_BASE], chip8_program, file_size);
 }
 
 void chip8_load_instructions(chip8_instructions_t *chip8_instructions) {
@@ -661,15 +679,15 @@ void chip8_load_font(chip8_t *chip8) {
 void chip8_init(chip8_t *chip8) {
     memset(chip8, 0, sizeof(*chip8));
     chip8->instrs = NULL;
-    chip8->cpu.PC = 0x200;
+    chip8->cpu.PC = PROGRAM_COUNTER_BASE;
     chip8->power = ON;
-    chip8->display.scale = 10;
-    chip8->display.width = 64;
-    chip8->display.height = 32;
+    chip8->display.scale  = SCALE;
+    chip8->display.width  = WINDOW_WIDTH;
+    chip8->display.height = WINDOW_HEIGHT;
 }
 
 void chip8_exec(chip8_t *chip8) {
-    if (chip8->cpu.PC > 4094) {
+    if (chip8->cpu.PC > (MAX_MEM_SIZE - 2)) {
         chip8->power = OFF;
         return;
     }
@@ -726,7 +744,7 @@ int main(int argc, char **argv) {
     while(chip8.power == ON) {
         handle_input(&chip8);
 
-        for (int i = 0; i < 11; i++) 
+        for (int i = 0; i < INSTRUCTIONS_PER_FRAME; i++) 
             chip8_exec(&chip8);
 
         chip8_update_timers_60hz(&chip8, &last_ms, &acc_ms);
