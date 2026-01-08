@@ -174,7 +174,7 @@ void handle_input(chip8_t *chip8) {
             case SDL_KEYUP: {
                 int k = sdl_key_to_chip8(e.key.keysym.sym);
                 if (k != -1) {
-                    chip8->keyboard.keys[k] = 0;
+                    chip8->keyboard.keys[k] = KEY_UP;
                 }
                 break;
             }
@@ -268,8 +268,7 @@ static void cls(chip8_t *chip8, uint16_t op) {
  * return from a subroutine */
 static void ret(chip8_t *chip8, uint16_t op) {
     (void)op; /* silence unused parameter warning */
-    chip8->cpu.PC = chip8->stack.data[chip8->stack.sp - 1];
-    chip8->stack.sp--;
+    chip8->cpu.PC = chip8->stack.data[--chip8->stack.sp];
 }
 
 /* 1nnn - JP addr
@@ -281,8 +280,8 @@ static void jp_addr(chip8_t *chip8, uint16_t op) {
 /* 2nnn - Call addr 
  * call subroutine at nnn */
 static void call_addr(chip8_t *chip8, uint16_t op) {
-    chip8->stack.data[chip8->stack.sp++] = chip8->cpu.PC;
-    PC(chip8) = NNN(op);
+    chip8->stack.data[chip8->stack.sp++] = PC(chip8) + 2;
+    JUMP(chip8, NNN(op));
 }
 
 /* 3xkk - SE Vx, byte
@@ -351,8 +350,9 @@ static void xor_vx_vy(chip8_t *chip8, uint16_t op) {
 /* 8xy4 - ADD Vx, Xy 
  * set Vx = Vx + Vy, set VF = carry */
 static void add_vx_vy(chip8_t *chip8, uint16_t op) {
-    Vx(chip8, op) = (Vx(chip8, op) + Vy(chip8, op)) & 255;
-    VF_(chip8) = (Vx(chip8, op) + Vy(chip8, op)) > 255;
+    uint16_t sum = (uint16_t)Vx(chip8, op) + (uint16_t)Vy(chip8, op);
+    VF_(chip8) = sum > 0xFF;
+    Vx(chip8, op) = (uint8_t)sum;
     NEXT(chip8);
 }
 
@@ -383,8 +383,8 @@ static void subn_vx_vy(chip8_t *chip8, uint16_t op) {
 /* 8xyE - SHL Vx, {, Vy}
  * set Vx = SHL 1 */
 static void shl_vx(chip8_t *chip8, uint16_t op) {
-    VF_(chip8) = Vx(chip8, op) & 0x08;
-    Vx(chip8, op) = Vx(chip8, op) << 1;
+    VF_(chip8) = (Vx(chip8, op) >> 7) & 0x01;
+    Vx(chip8, op) <<= 1;
     NEXT(chip8);
 }
 
@@ -405,7 +405,7 @@ static void ld_i_nnn(chip8_t *chip8, uint16_t op) {
 /* Bnnn - JP V0, addr 
  * jump to location nnn + V0 */
 static void jp_v0_addr(chip8_t *chip8, uint16_t op) {
-    PC(chip8) = NNN(op) + Vx(chip8, V(chip8, 0));
+    PC(chip8) = (uint16_t)(NNN(op) + V(chip8, 0));
 }
 
 /* Cxkk - RND Vx, byte 
@@ -452,14 +452,14 @@ static void drw_vx_vy_n(chip8_t *chip8, uint16_t op) {
 /* Ex9E - SKP Vx
  * skip next instruction if key with the value of Vx is pressed */
 static void skp_vx(chip8_t *chip8, uint16_t op) {
-    if (chip8->keyboard.keys[Vx(chip8, op)]) SKIP(chip8);
+    if (chip8->keyboard.keys[Vx(chip8, op) & 0xF]) SKIP(chip8);
     else NEXT(chip8);
 }
 
 /* ExA1 - SKNP Vx 
  * skip next instruction if key with the value of Vx is not pressed. */
 static void sknp_vx(chip8_t *chip8, uint16_t op) {
-    if (!chip8->keyboard.keys[Vx(chip8, op)]) SKIP(chip8);
+    if (!chip8->keyboard.keys[Vx(chip8, op) & 0xF]) SKIP(chip8);
     else NEXT(chip8); 
 }
 
@@ -546,7 +546,6 @@ static void ld_vx_loc_i(chip8_t *chip8, uint16_t op) {
 /* Used to fill in function table for unknown opcodes */
 static void op_unknown(chip8_t *chip8, uint16_t op) {
     (void)chip8;    /* silence unused parameter warning */
-    (void)op;       /* silence unused parameter warning */
     fprintf(stderr, "unknown opcode: %04X\n", op);
     exit(1);
 }
@@ -557,7 +556,7 @@ static void route_0(chip8_t *chip8, uint16_t op) {
 }
 
 static void route_8(chip8_t *chip8, uint16_t op) {
-    chip8->instrs->op8[op & 0xFF](chip8, op);
+    chip8->instrs->op8[op & 0xF](chip8, op);
 }
 
 static void route_E(chip8_t *chip8, uint16_t op) {
