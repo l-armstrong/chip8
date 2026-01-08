@@ -359,8 +359,10 @@ static void add_vx_vy(chip8_t *chip8, uint16_t op) {
 /* 8xy5 - SUB Vx, Vy 
  * set Vx = Vx - Vy, set VF = NOT borrow */
 static void sub_vx_vy(chip8_t *chip8, uint16_t op) {
-    Vx(chip8, op) = (Vx(chip8, op) - Vy(chip8, op)) & 255;
-    VF_(chip8) = Vx(chip8, op) > Vy(chip8, op);
+    uint8_t vx = Vx(chip8, op);
+    uint8_t vy = Vy(chip8, op);
+    VF_(chip8) = vx >= vy;
+    Vx(chip8, op) = (uint8_t)(vx - vy);
     NEXT(chip8);
 }
 
@@ -375,8 +377,10 @@ static void shr_vx(chip8_t *chip8, uint16_t op) {
 /* 8xy7 - SUBN Vx, Vy 
  * set Vx = Vy - Vx, set VF = NOT borrow */
 static void subn_vx_vy(chip8_t *chip8, uint16_t op) {
-    Vx(chip8, op) = (Vy(chip8, op) - Vx(chip8, op)) & 255;
-    VF_(chip8) = Vy(chip8, op) > Vx(chip8, op);
+    uint8_t vx = Vx(chip8, op);
+    uint8_t vy = Vy(chip8, op);
+    VF_(chip8) = vy >= vx;
+    Vx(chip8, op) = (uint8_t)(vy - vx);
     NEXT(chip8);
 }
 
