@@ -193,10 +193,7 @@ static void chip8_update_timers_60hz(chip8_t *chip8, uint32_t *last_ms, uint32_t
     uint32_t now = SDL_GetTicks();
     uint32_t dt  = now - *last_ms;
     *last_ms     = now;
-
-    *acc_ms += dt;
-
-
+    *acc_ms      += dt;
     /* 60Hz is 1000/60 = 16.6666... ms 
     if a lot of time has passed catch up. */
     while (*acc_ms >= 17) {
