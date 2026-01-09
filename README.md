@@ -1,19 +1,12 @@
-# CHIP-8 Emulator (C)
+# CHIP-8 Emulator 
 
-A simple, from-scratch implementation of the **CHIP-8 virtual machine**, written in **C** with **SDL2** for graphics and input.
+A simple, from scratch implementation of the **CHIP-8 virtual machine**, written in **C** with **SDL2** for graphics and input.
 
 ## What is CHIP-8?
 
-CHIP-8 is a **virtual machine**, not a real CPU, created in the mid-1970s by **Joseph Weisbecker** to make it easier to write games for early microcomputers such as the COSMAC VIP.
+CHIP-8 is a **virtual machine**, created in the mid-1970s by **Joseph Weisbecker** to make it easier to write games for early microcomputers such as the COSMAC VIP.
 
-CHIP-8 programs were small, simple, and portable. Many classic games—like *Pong*, *Breakout*, and *Space Invaders*—were written for CHIP-8.
-
-Because of its:
-- small instruction set
-- simple memory model
-- minimal graphics
-- well-documented behavior
-
+CHIP-8 programs were small, simple, and portable. Many classic games like *Pong*, *Breakout*, and *Space Invaders* were written for CHIP-8.
 
 ## CHIP-8 Architecture Overview
 
@@ -97,7 +90,6 @@ Example:
 - Implement the CHIP-8 instruction set faithfully
 - Keep the codebase simple and readable
 - Make all machine state explicit
-
 
 This project is intentionally written in **plain C**, without object systems or heavy abstractions, to keep the machine model visible.
 
