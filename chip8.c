@@ -320,7 +320,7 @@ static void ld_vx_kk(chip8_t *chip8, uint16_t op) {
 /* 7xkk - ADD Vx, byte 
  * set Vx = Vx + kk */
 static void add_vx_kk(chip8_t *chip8, uint16_t op) {
-    Vx(chip8, op) = (Vx(chip8, op) + KK(op)) & 255;
+    Vx(chip8, op) = (Vx(chip8, op) + KK(op));
     NEXT(chip8);
 }
 
@@ -334,21 +334,21 @@ static void ld_vx_vy(chip8_t *chip8, uint16_t op) {
 /* 8xy1 - OR Vx, Vy
  * set Vx = Vx OR Vy */
 static void or_vx_vy(chip8_t *chip8, uint16_t op) {
-    Vx(chip8, op) = (Vx(chip8, op) | Vy(chip8, op)) & 255;
+    Vx(chip8, op) = (Vx(chip8, op) | Vy(chip8, op));
     NEXT(chip8);
 }
 
 /* 8xy2 - AND Vx, Vy
  * set Vx = Vx AND Vy */
 static void and_vx_vy(chip8_t *chip8, uint16_t op) {
-    Vx(chip8, op) = (Vx(chip8, op) & Vy(chip8, op)) & 255;
+    Vx(chip8, op) = (Vx(chip8, op) & Vy(chip8, op));
     NEXT(chip8);
 }
 
 /* 8xy3 - XOR Vx, Vy
  * set Vx = Vx XOR Vy */
 static void xor_vx_vy(chip8_t *chip8, uint16_t op) {
-    Vx(chip8, op) = (Vx(chip8, op) ^ Vy(chip8, op)) & 255;
+    Vx(chip8, op) = (Vx(chip8, op) ^ Vy(chip8, op));
     NEXT(chip8);
 }
 
