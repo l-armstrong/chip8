@@ -191,8 +191,8 @@ void handle_input(chip8_t *chip8) {
 /*================================================  Time  ========================================================== */
 static void chip8_update_timers_60hz(chip8_t *chip8, uint32_t *last_ms, uint32_t *acc_ms) {
     uint32_t now = SDL_GetTicks();
-    uint32_t dt = now - *last_ms;
-    *last_ms = now;
+    uint32_t dt  = now - *last_ms;
+    *last_ms     = now;
 
     *acc_ms += dt;
 
@@ -218,21 +218,21 @@ void *xmalloc(size_t size) {
 
 /*=========================================== Chip8 Instructions ==================================================== */
 /* GET Opcode Helpers */
-#define X(op)         (((op) >> 8) & 0xF)
-#define Y(op)         (((op) >> 4) & 0xF)
-#define KK(op)        ((op) & 0xFF)
-#define NNN(op)       ((op) & 0x0FFF)
-#define N(op)         ((op) & 0xF)
-#define LO(op)        ((op) & 0xFF)
+#define X(op)          (((op) >> 8) & 0xF)
+#define Y(op)          (((op) >> 4) & 0xF)
+#define KK(op)         ((op) & 0xFF)
+#define NNN(op)        ((op) & 0x0FFF)
+#define N(op)          ((op) & 0xF)
+#define LO(op)         ((op) & 0xFF)
 
 /* State access helpers */
-#define V(c, i)       ((c)->cpu.V[(i) & 0xF])
-#define I(c)          ((c)->cpu.I)
-#define PC(c)         ((c)->cpu.PC)
+#define V(c, i)        ((c)->cpu.V[(i) & 0xF])
+#define I(c)           ((c)->cpu.I)
+#define PC(c)          ((c)->cpu.PC)
 
 /* Register access helpers */
-#define VX(cpu, x)    ((cpu)->V[(x) & 0xF])
-#define VF(cpu)       ((cpu)->V[0xF])
+#define VX(cpu, x)     ((cpu)->V[(x) & 0xF])
+#define VF(cpu)        ((cpu)->V[0xF])
 
 /* Flow helpers */
 #define NEXT(c)        (PC(c) += 2)
@@ -676,7 +676,7 @@ void chip8_load_font(chip8_t *chip8) {
     memcpy(&chip8->mem.map[FONT_BASE], chip8_fontset, sizeof(chip8_fontset));
 }
 
-void chip8_init(chip8_t *chip8) {
+void chip8_init(chip8_t *chip8, chip8_instructions_t *chip8_instructions) {
     memset(chip8, 0, sizeof(*chip8));
     chip8->instrs = NULL;
     chip8->cpu.PC = PROGRAM_COUNTER_BASE;
@@ -684,6 +684,9 @@ void chip8_init(chip8_t *chip8) {
     chip8->display.scale  = SCALE;
     chip8->display.width  = WINDOW_WIDTH;
     chip8->display.height = WINDOW_HEIGHT;
+    chip8_load_font(chip8);
+    chip8_load_instructions(chip8_instructions);
+    chip8->instrs = chip8_instructions;
 }
 
 void chip8_exec(chip8_t *chip8) {
@@ -729,11 +732,8 @@ int main(int argc, char **argv) {
 
     chip8_t chip8;
     chip8_instructions_t chip8_instructions;
-    chip8_init(&chip8);
+    chip8_init(&chip8, &chip8_instructions);
     chip8_load_program(&chip8, chip8_program, file_size);
-    chip8_load_font(&chip8);
-    chip8_load_instructions(&chip8_instructions);
-    chip8.instrs = &chip8_instructions;
 
     launch_window(&chip8);
     clear_window(&chip8);
